@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader
 from torchtext.data import get_tokenizer
 from torchtext.vocab import vocab
 import pandas as pd
+import os
 
 from collections import OrderedDict
 from asap_dataset import ASAPDataset, collate_fn
@@ -19,6 +20,7 @@ essay_set = {
     7: (0, 30),
     8: (0, 60)
 }
+
 def min_max_normalization(score, prompt):
     """
     Normalizes the score into the range from 0 to 1
@@ -36,6 +38,12 @@ def scaler(score, prompt):
     """
 
     return round(score * (essay_set[prompt][1] - essay_set[prompt][0]) + essay_set[prompt][0])
+
+def scale_dataset(asap):
+    for row in range(len(asap)):
+        asap.loc[row, 'nscore'] = min_max_normalization(asap.loc[row, 'essay_set'], asap.loc[row, 'domain1_score'])
+    return asap
+
 
 def split_dataset(prompt, asap): 
     """
@@ -65,6 +73,20 @@ def essay_vectorizer(text):
 
     return vocab_essay
 
+def to_dataloader(train, val, test, batch_size):
+
+    vocab_essay = essay_vectorizer(train)
+    asap_train = ASAPDataset(train, vocab_essay)
+    train_dl = DataLoader(asap_train, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+
+    asap_val = ASAPDataset(val, vocab_essay)
+    val_dl = DataLoader(asap_val, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+
+    asap_test = ASAPDataset(test, vocab_essay)
+    test_dl = DataLoader(asap_test, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+
+    return train_dl, val_dl, test_dl, vocab_essay
+
 def essay_dataloader(prompt, batch_size):
     """
     The dataset can be download from https://www.kaggle.com/competitions/asap-aes.
@@ -79,15 +101,18 @@ def essay_dataloader(prompt, batch_size):
     asap = pd.read_csv(file_path, sep='\t', encoding='ISO-8859-1', usecols=columns)
 
     train, val, test = split_dataset(prompt, asap)
-    vocab_essay = essay_vectorizer(train)
-
-    asap_train = ASAPDataset(train, vocab_essay)
-    train_dl = DataLoader(asap_train, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-
-    asap_val = ASAPDataset(val, vocab_essay)
-    val_dl = DataLoader(asap_val, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
-
-    asap_test = ASAPDataset(test, vocab_essay)
-    test_dl = DataLoader(asap_test, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
     
-    return train_dl, val_dl, test_dl, vocab_essay
+    return to_dataloader(train, val, test, batch_size)
+
+def essay_dataloader_5cv(prompt, fold, batch_size):
+    """
+    The same dataset is used but with 5-fold cross-validation from Taghipour and Ng (2016)
+    """
+    file_path='../dataset/asap-data-nea'
+    columns = ['essay_id', 'essay_set', 'essay', 'domain1_score']
+     
+    train = pd.read_csv(os.path.join(file_path, f'fold_{fold}', f'train.tsv'), sep='\t', encoding='ISO-8859-1', usecols=columns)
+    val = pd.read_csv(os.path.join(file_path, f'fold_{fold}', f'dev.tsv'), sep='\t', encoding='ISO-8859-1', usecols=columns)
+    test = pd.read_csv(os.path.join(file_path, f'fold_{fold}', f'test.tsv'), sep='\t', encoding='ISO-8859-1', usecols=columns)
+
+    return to_dataloader(train[train["essay_set"] == prompt].values, val[val["essay_set"] == prompt].values, test[test["essay_set"] == prompt].values, batch_size)
