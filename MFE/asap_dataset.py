@@ -1,8 +1,23 @@
 import pandas as pd
+import os
 
 def load_dataset(filepath, columns):
     asap = pd.read_csv(filepath, sep='\t', encoding='ISO-8859-1', usecols=columns)
     return asap
+
+def load_dataset_5cv(file_path, columns):
+    folds_data = []
+    for idx in range(0,5):   
+        train_data = pd.read_csv(os.path.join(file_path, f'fold_{idx}', f'train_fe.tsv'))
+        dev_data = pd.read_csv(os.path.join(file_path, f'fold_{idx}', f'dev_fe.tsv'))
+        test_data = pd.read_csv(os.path.join(file_path, f'fold_{idx}', f'test_fe.tsv'))
+        
+        train_data = scale_dataset(pd.DataFrame(train_data, columns=columns))
+        dev_data = scale_dataset(pd.DataFrame(dev_data, columns=columns))
+        test_data = scale_dataset(pd.DataFrame(test_data, columns=columns))
+        
+        folds_data.append((train_data, dev_data, test_data))
+    return folds_data
 
 def score_range(prompt):
     match prompt:
